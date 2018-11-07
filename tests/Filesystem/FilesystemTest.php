@@ -2,8 +2,12 @@
 
 namespace Illuminate\Tests\Filesystem;
 
+use Mockery as m;
 use PHPUnit\Framework\TestCase;
+use League\Flysystem\Adapter\Ftp;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Foundation\Application;
+use Illuminate\Filesystem\FilesystemManager;
 
 class FilesystemTest extends TestCase
 {
@@ -17,6 +21,8 @@ class FilesystemTest extends TestCase
 
     public function tearDown()
     {
+        m::close();
+
         $files = new Filesystem;
         $files->deleteDirectory($this->tempDir);
     }
@@ -41,7 +47,8 @@ class FilesystemTest extends TestCase
         $files = new Filesystem;
         $files->chmod($this->tempDir.'/file.txt', 0755);
         $filePermission = substr(sprintf('%o', fileperms($this->tempDir.'/file.txt')), -4);
-        $this->assertEquals('0755', $filePermission);
+        $expectedPermissions = DIRECTORY_SEPARATOR == '\\' ? '0666' : '0755';
+        $this->assertEquals($expectedPermissions, $filePermission);
     }
 
     public function testGetChmod()
@@ -50,8 +57,9 @@ class FilesystemTest extends TestCase
         chmod($this->tempDir.'/file.txt', 0755);
 
         $files = new Filesystem;
-        $filePermisson = $files->chmod($this->tempDir.'/file.txt');
-        $this->assertEquals('0755', $filePermisson);
+        $filePermission = $files->chmod($this->tempDir.'/file.txt');
+        $expectedPermissions = DIRECTORY_SEPARATOR == '\\' ? '0666' : '0755';
+        $this->assertEquals($expectedPermissions, $filePermission);
     }
 
     public function testDeleteRemovesFiles()
@@ -92,6 +100,14 @@ class FilesystemTest extends TestCase
         $files->deleteDirectory($this->tempDir.'/foo');
         $this->assertFalse(is_dir($this->tempDir.'/foo'));
         $this->assertFileNotExists($this->tempDir.'/foo/file.txt');
+    }
+
+    public function testDeleteDirectoryReturnFalseWhenNotADirectory()
+    {
+        mkdir($this->tempDir.'/foo');
+        file_put_contents($this->tempDir.'/foo/file.txt', 'Hello World');
+        $files = new Filesystem;
+        $this->assertFalse($files->deleteDirectory($this->tempDir.'/foo/file.txt'));
     }
 
     public function testCleanDirectory()
@@ -192,6 +208,17 @@ class FilesystemTest extends TestCase
         $this->assertFalse(is_dir($this->tempDir.'/tmp'));
     }
 
+    public function testMoveDirectoryReturnsFalseWhileOverwritingAndUnableToDeleteDestinationDirectory()
+    {
+        mkdir($this->tempDir.'/tmp', 0777, true);
+        file_put_contents($this->tempDir.'/tmp/foo.txt', '');
+        mkdir($this->tempDir.'/tmp2', 0777, true);
+
+        $files = m::mock(Filesystem::class)->makePartial();
+        $files->shouldReceive('deleteDirectory')->once()->andReturn(false);
+        $this->assertFalse($files->moveDirectory($this->tempDir.'/tmp', $this->tempDir.'/tmp2', true));
+    }
+
     /**
      * @expectedException \Illuminate\Contracts\Filesystem\FileNotFoundException
      */
@@ -234,6 +261,13 @@ class FilesystemTest extends TestCase
         $files->move($this->tempDir.'/foo.txt', $this->tempDir.'/bar.txt');
         $this->assertFileExists($this->tempDir.'/bar.txt');
         $this->assertFileNotExists($this->tempDir.'/foo.txt');
+    }
+
+    public function testNameReturnsName()
+    {
+        file_put_contents($this->tempDir.'/foobar.txt', 'foo');
+        $filesystem = new Filesystem;
+        $this->assertEquals('foobar', $filesystem->name($this->tempDir.'/foobar.txt'));
     }
 
     public function testExtensionReturnsExtension()
@@ -440,5 +474,30 @@ class FilesystemTest extends TestCase
         foreach ($files->allFiles($this->tempDir) as $file) {
             $this->assertInstanceOf(\SplFileInfo::class, $file);
         }
+    }
+
+    public function testCreateFtpDriver()
+    {
+        $filesystem = new FilesystemManager(new Application());
+
+        $driver = $filesystem->createFtpDriver([
+            'host' => 'ftp.example.com',
+            'username' => 'admin',
+            'permPublic' => 0700,
+            'unsopertedParam' => true,
+        ]);
+
+        /** @var Ftp $adapter */
+        $adapter = $driver->getAdapter();
+        $this->assertEquals(0700, $adapter->getPermPublic());
+        $this->assertEquals('ftp.example.com', $adapter->getHost());
+        $this->assertEquals('admin', $adapter->getUsername());
+    }
+
+    public function testHash()
+    {
+        file_put_contents($this->tempDir.'/foo.txt', 'foo');
+        $filesystem = new Filesystem;
+        $this->assertEquals('acbd18db4cc2f85cedef654fccc4a4d8', $filesystem->hash($this->tempDir.'/foo.txt'));
     }
 }

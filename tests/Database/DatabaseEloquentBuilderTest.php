@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as BaseCollection;
+use Illuminate\Database\Query\Builder as BaseBuilder;
 
 class DatabaseEloquentBuilderTest extends TestCase
 {
@@ -124,6 +125,16 @@ class DatabaseEloquentBuilderTest extends TestCase
 
         $result = $builder->first();
         $this->assertEquals('bar', $result);
+    }
+
+    public function testQualifyColumn()
+    {
+        $builder = new Builder(m::mock(BaseBuilder::class));
+        $builder->shouldReceive('from')->with('stub');
+
+        $builder->setModel(new EloquentModelStub);
+
+        $this->assertEquals('stub.column', $builder->qualifyColumn('column'));
     }
 
     public function testGetMethodLoadsModelsAndHydratesEagerRelations()
@@ -366,7 +377,7 @@ class DatabaseEloquentBuilderTest extends TestCase
     public function testLocalMacrosAreCalledOnBuilder()
     {
         unset($_SERVER['__test.builder']);
-        $builder = new \Illuminate\Database\Eloquent\Builder(new \Illuminate\Database\Query\Builder(
+        $builder = new Builder(new BaseBuilder(
             m::mock('Illuminate\Database\ConnectionInterface'),
             m::mock('Illuminate\Database\Query\Grammars\Grammar'),
             m::mock('Illuminate\Database\Query\Processors\Processor')
@@ -449,7 +460,7 @@ class DatabaseEloquentBuilderTest extends TestCase
     {
         $builder = $this->getBuilder();
         $builder->setModel($this->getMockModel());
-        $builder->getModel()->shouldReceive('orders')->once()->andReturn($relation = m::mock('stdClass'));
+        $builder->getModel()->shouldReceive('newInstance->orders')->once()->andReturn($relation = m::mock('stdClass'));
         $relationQuery = m::mock('stdClass');
         $relation->shouldReceive('getQuery')->andReturn($relationQuery);
         $relationQuery->shouldReceive('with')->once()->with(['lines' => null, 'lines.details' => null]);
@@ -462,8 +473,8 @@ class DatabaseEloquentBuilderTest extends TestCase
     {
         $builder = $this->getBuilder();
         $builder->setModel($this->getMockModel());
-        $builder->getModel()->shouldReceive('orders')->once()->andReturn($relation = m::mock('stdClass'));
-        $builder->getModel()->shouldReceive('ordersGroups')->once()->andReturn($groupsRelation = m::mock('stdClass'));
+        $builder->getModel()->shouldReceive('newInstance->orders')->once()->andReturn($relation = m::mock('stdClass'));
+        $builder->getModel()->shouldReceive('newInstance->ordersGroups')->once()->andReturn($groupsRelation = m::mock('stdClass'));
 
         $relationQuery = m::mock('stdClass');
         $relation->shouldReceive('getQuery')->andReturn($relationQuery);
@@ -564,7 +575,7 @@ class DatabaseEloquentBuilderTest extends TestCase
         $nestedRawQuery = $this->getMockQueryBuilder();
         $nestedQuery->shouldReceive('getQuery')->once()->andReturn($nestedRawQuery);
         $model = $this->getMockModel()->makePartial();
-        $model->shouldReceive('newQueryWithoutScopes')->once()->andReturn($nestedQuery);
+        $model->shouldReceive('newModelQuery')->once()->andReturn($nestedQuery);
         $builder = $this->getBuilder();
         $builder->getQuery()->shouldReceive('from');
         $builder->setModel($model);
@@ -987,7 +998,7 @@ class DatabaseEloquentBuilderTest extends TestCase
 
     protected function getMockQueryBuilder()
     {
-        $query = m::mock('Illuminate\Database\Query\Builder');
+        $query = m::mock(BaseBuilder::class);
         $query->shouldReceive('from')->with('foo_table');
 
         return $query;

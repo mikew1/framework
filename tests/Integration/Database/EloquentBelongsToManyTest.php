@@ -3,31 +3,18 @@
 namespace Illuminate\Tests\Integration\Database\EloquentBelongsToManyTest;
 
 use Illuminate\Support\Carbon;
-use Orchestra\Testbench\TestCase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\Pivot;
+use Illuminate\Tests\Integration\Database\DatabaseTestCase;
 
 /**
  * @group integration
  */
-class EloquentBelongsToManyTest extends TestCase
+class EloquentBelongsToManyTest extends DatabaseTestCase
 {
-    protected function getEnvironmentSetUp($app)
-    {
-        $app['config']->set('app.debug', 'true');
-
-        $app['config']->set('database.default', 'testbench');
-
-        $app['config']->set('database.connections.testbench', [
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-            'prefix' => '',
-        ]);
-    }
-
     public function setUp()
     {
         parent::setUp();
@@ -142,14 +129,20 @@ class EloquentBelongsToManyTest extends TestCase
 
         $post->tagsWithCustomPivot()->attach($tag->id);
 
-        $post->tagsWithCustomAccessor()->attach($tag->id);
-
         $this->assertInstanceOf(CustomPivot::class, $post->tagsWithCustomPivot[0]->pivot);
 
         $this->assertEquals([
             'post_id' => '1',
             'tag_id' => '1',
         ], $post->tagsWithCustomAccessor[0]->tag->toArray());
+
+        $pivot = $post->tagsWithCustomPivot[0]->pivot;
+        $pivot->tag_id = 2;
+        $pivot->save();
+
+        $this->assertEquals(1, CustomPivot::count());
+        $this->assertEquals(1, CustomPivot::first()->post_id);
+        $this->assertEquals(2, CustomPivot::first()->tag_id);
     }
 
     /**
@@ -590,6 +583,24 @@ class EloquentBelongsToManyTest extends TestCase
 
         $this->assertNotEquals('2017-10-10 10:10:10', Tag::find(300)->updated_at);
     }
+
+    public function test_custom_related_key()
+    {
+        $post = Post::create(['title' => str_random()]);
+
+        $tag = $post->tagsWithCustomRelatedKey()->create(['name' => str_random()]);
+        $this->assertEquals($tag->name, $post->tagsWithCustomRelatedKey()->first()->pivot->tag_id);
+
+        $post->tagsWithCustomRelatedKey()->detach($tag);
+
+        $post->tagsWithCustomRelatedKey()->attach($tag);
+        $this->assertEquals($tag->name, $post->tagsWithCustomRelatedKey()->first()->pivot->tag_id);
+
+        $post->tagsWithCustomRelatedKey()->detach(new Collection([$tag]));
+
+        $post->tagsWithCustomRelatedKey()->attach(new Collection([$tag]));
+        $this->assertEquals($tag->name, $post->tagsWithCustomRelatedKey()->first()->pivot->tag_id);
+    }
 }
 
 class Post extends Model
@@ -625,6 +636,12 @@ class Post extends Model
         return $this->belongsToMany(TagWithCustomPivot::class, 'posts_tags', 'post_id', 'tag_id')
             ->using(CustomPivot::class)
             ->as('tag');
+    }
+
+    public function tagsWithCustomRelatedKey()
+    {
+        return $this->belongsToMany(Tag::class, 'posts_tags', 'post_id', 'tag_id', 'id', 'name')
+            ->withPivot('flag');
     }
 }
 
@@ -667,4 +684,5 @@ class TagWithCustomPivot extends Model
 
 class CustomPivot extends Pivot
 {
+    protected $table = 'posts_tags';
 }

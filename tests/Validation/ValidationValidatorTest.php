@@ -562,6 +562,12 @@ class ValidationValidatorTest extends TestCase
         $this->assertFalse($v->passes());
         $v->messages()->setFormat(':message');
         $this->assertEquals('require it please!', $v->messages()->first('name'));
+
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['name' => 'foobarba'], ['name' => 'size:9'], ['size' => ['string' => ':attribute should be of length :size']]);
+        $this->assertFalse($v->passes());
+        $v->messages()->setFormat(':message');
+        $this->assertEquals('name should be of length 9', $v->messages()->first('name'));
     }
 
     public function testInlineValidationMessagesAreRespectedWithAsterisks()
@@ -1875,6 +1881,7 @@ class ValidationValidatorTest extends TestCase
             ['rtsp://fully.qualified.domain/path'],
             ['rtsps://fully.qualified.domain/path'],
             ['rtspu://fully.qualified.domain/path'],
+            ['s3://fully.qualified.domain/path'],
             ['secondlife://fully.qualified.domain/path'],
             ['service://fully.qualified.domain/path'],
             ['session://fully.qualified.domain/path'],
@@ -2638,6 +2645,12 @@ class ValidationValidatorTest extends TestCase
 
         $v = new Validator($trans, ['x' => '17:44'], ['x' => 'date_format:H:i|after:17:44']);
         $this->assertTrue($v->fails());
+
+        $v = new Validator($trans, ['x' => '2038-01-18', '2018-05-12' => '2038-01-19'], ['x' => 'date_format:Y-m-d|before:2018-05-12']);
+        $this->assertTrue($v->fails());
+
+        $v = new Validator($trans, ['x' => '1970-01-02', '2018-05-12' => '1970-01-01'], ['x' => 'date_format:Y-m-d|after:2018-05-12']);
+        $this->assertTrue($v->fails());
     }
 
     public function testWeakBeforeAndAfter()
@@ -2943,6 +2956,9 @@ class ValidationValidatorTest extends TestCase
     public function testSometimesOnArraysInImplicitRules()
     {
         $trans = $this->getIlluminateArrayTranslator();
+
+        $v = new Validator($trans, [['bar' => 'baz']], ['*.foo' => 'sometimes|required|string']);
+        $this->assertTrue($v->passes());
 
         // $data = ['names' => [['second' => []]]];
         // $v = new Validator($trans, $data, ['names.*.second' => 'sometimes|required']);
